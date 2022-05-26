@@ -1,0 +1,11 @@
+---
+- hosts: pbench_vms
+  become: true
+  remote_user: cloud-user
+  tasks:
+    - name: mount cinder volume on vms
+      shell: |
+        sudo mkfs.xfs /dev/vdb
+        sudo mkdir /mnt/fio
+        sudo mount /dev/vdb /mnt/fio
+        sudo df -Th |grep -i mnt/fio

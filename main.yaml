@@ -1,0 +1,10 @@
+---
+- import_playbook: create_vms.yml
+
+- import_playbook: repo-bootstrap-vms.yml
+
+- import_playbook: pbench-agent-install-vms.yml
+
+- import_playbook:  register.yml
+
+- import_playbook: mount_cinder_volume.yaml

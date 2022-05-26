@@ -1,0 +1,11 @@
+---
+- name:  bootstrap rhel[789] systems with a reasonable set of repos
+  hosts: pbench_vms
+  remote_user: cloud-user
+  gather_facts: no
+
+  roles:
+    - raw-get-distro
+    - { role: rhel9-repo-install, when: distro.startswith('el9') }
+    - { role: rhel8-repo-install, when: distro.startswith('el8') }
+    - { role: rhel7-repo-install, when: distro.startswith('el7') }

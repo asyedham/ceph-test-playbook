@@ -1,0 +1,94 @@
+---
+- hosts: localhost
+  vars:
+    external_network: external
+    num_vms_per_compute: 5
+    num_volumes: 35
+    num_of_computes: 7
+    image: rhel-85-qcow
+    flavor: m1.xmedium
+    internal_network: internal
+    key: key1
+    security_group: secgroup1
+  tasks:
+    - name: delete the old vm's
+      shell: |
+        source ~/overcloudrc;
+        for i in $(openstack server list | grep  VM | cut -d "|" -f 2);do openstack server delete $i;done
+
+    - name: delete old floating ips
+      shell: |
+        source ~/overcloudrc;
+        for i in $(openstack floating ip list -c ID -f value -c Port -f value | grep None| cut -d ' ' -f 1);do openstack floating ip delete $i;done
+
+    - name : delete old volumes
+      shell: |
+        source ~/overcloudrc;
+        for i in $(openstack volume list  | grep -iv attached |  grep vol  | cut -d "|" -f 2); do openstack volume delete $i; done
+
+    - name: Create vm's on each compute
+      shell: |
+        for i in {0..6}; do source ~/overcloudrc && openstack server create --image {{ image }} --flavor {{ flavor }} --nic net-id={{ internal_network }} --key-name {{ key }} --security-group {{ security_group }} --hypervisor-hostname compute-$i.localdomain VM-on-Compute-$i-{{ item }} |  grep -E ' id ' | awk '{print $4}'; done
+      with_sequence: start=1 end={{ num_vms_per_compute }}
+
+    - name: get the vm ids
+      shell: |
+        source ~/overcloudrc; openstack server list | grep -E VM-on-Compute | cut -d "|" -f 2
+      register: vm_ids
+
+    - name: Create volumes
+      shell: |
+        source ~/overcloudrc; openstack volume create --size 300 volume-{{ item }}  |  grep -E ' id' | awk '{print $4}'
+      with_sequence: start=1 end={{ num_volumes}}
+      register: volumes
+
+    - debug:
+        msg: "{{ item.stdout_lines }}"
+      with_items:
+        - "{{ volumes.results }}"
+
+    - debug:
+        msg: "{{ item }}"
+      with_items:
+        - "{{ vm_ids.stdout_lines }}"
+
+    - name: Attach the volume of 300G to each server
+      shell: |
+        source ~/overcloudrc; openstack server add volume {{ item[0] }} {{ item[1].stdout_lines[0] }}
+      with_together:
+        - "{{ vm_ids.stdout_lines }}"
+        - "{{ volumes.results }}"
+
+    - name: create floating ip
+      shell: |
+        source ~/overcloudrc; openstack floating ip create {{ external_network }}  |  grep -E 'floating_ip_address' | awk '{print $4}'
+      with_sequence: start=1 end={{ num_volumes }}
+      register: floating_ips
+
+    - name: Attach floating ip
+      shell: |
+        source ~/overcloudrc; openstack server add floating ip {{item[0]}} {{item[1].stdout_lines[0]}}
+      with_together:
+        - "{{ vm_ids.stdout_lines }}"
+        - "{{ floating_ips.results }}"
+
+    - name: copy the public keys
+      shell: |
+        cat ~/.ssh/id_rsa.pub | ssh -i ~/key-new.pem cloud-user@{{ item.stdout_lines[0] }} "mkdir -p ~/.ssh && chmod 700 ~/.ssh && cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys"
+      with_items:
+        - "{{ floating_ips.results }}"
+
+    - name: copy the public keys to root user
+      shell: |
+        ssh cloud-user@{{item.stdout_lines[0]}} sudo cp /home/cloud-user/.ssh/authorized_keys /root/authorized_keys
+      with_items:
+        - "{{ floating_ips.results }}"
+
+    - name: add host to inventory
+      add_host:
+        name: "{{ item.stdout_lines[0] }}"
+        groups:
+        - vms
+        - pbench-vms
+      with_items:
+        - "{{ floating_ips.results }}"

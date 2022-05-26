@@ -1,0 +1,30 @@
+---
+- hosts: localhost
+  tasks:
+    - name: get the server names
+      shell: |
+        source ~/overcloudrc
+        openstack volume list | grep -i VM | cut -d '|' -f  6 | cut -d ' ' -f 4
+      register: servers
+
+    - name: get the volumes
+      shell: |
+        source ~/overcloudrc
+        openstack volume list | grep -i VM | cut -d "|" -f 3
+      register: volume_names
+
+    - debug:
+        msg: "{{ servers }}"
+
+    - name: deatch volume from server
+      shell: |
+        source ~/overcloudrc
+        openstack server remove volume {{ item.0 }} {{ item.1}}
+      with_together:
+        - "{{ servers.stdout_lines }}"
+        - "{{ volume_names.stdout_lines }}"
+
+    - name: delete volume
+      shell: |
+        source ~/overcloudrc
+        for i in $(openstack volume list  | grep -iv attached |  grep vol  | cut -d "|" -f 2); do openstack volume delete $i; done

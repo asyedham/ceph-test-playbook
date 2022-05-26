@@ -1,0 +1,44 @@
+---
+- hosts: pbench_vms
+  become: false
+  remote_user: cloud-user
+  tasks:
+    - name: create directory
+      become: true
+      file:
+        path: "{{ item }}"
+        state: directory
+        mode: '1777'
+      with_items:
+        - /var/lib/pbench-agent
+        - /var/lib/pbench-agent/tmp
+
+    - name: register tools
+      shell: |
+        pbench-register-tool-set
+
+    - name: install fio
+      become: true
+      yum:
+        name: fio
+        state: latest
+
+    - name: install firewalld
+      become: true
+      yum:
+        name: firewalld
+        state: present
+
+    - name: start firewalld
+      become: true
+      service:
+        name: firewalld
+        state: started
+        enabled: yes
+
+    - name: enable port 8765
+      become: true
+      firewalld:
+        port: 8765/tcp
+        permanent: true
+        state: enabled
